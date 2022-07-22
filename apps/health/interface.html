@@ -51,7 +51,7 @@ function saveCSV(data, date, title) {
 }
 
 function downloadHealth(filename, callback) {
-  Util.showModal("Downloading Track...");
+  Util.showModal("Downloading Health info...");
   Util.readStorage(filename, data => {
     Util.hideModal();
     callback(data);
@@ -113,7 +113,7 @@ function getMonthList() {
           Util.showModal("Deleting...");
           Util.eraseStorage(filename,()=>{
             Util.hideModal();
-            getTrackList();
+            getMonthList();
           });
         }
         if (task=="downloadcsv") {
