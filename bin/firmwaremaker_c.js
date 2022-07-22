@@ -1,4 +1,4 @@
-#!/usr/bin/nodejs
+#!/usr/bin/node
 /*
 Mashes together a bunch of different apps into a big binary blob.
 We then store this *inside* the Bangle.js firmware and can use it
@@ -16,7 +16,6 @@ var DEVICE = process.argv[2];
 var path = require('path');
 var ROOTDIR = path.join(__dirname, '..');
 var APPDIR = ROOTDIR+'/apps';
-var APPJSON = ROOTDIR+'/apps.json';
 var MINIFY = true;
 var OUTFILE, APPS;
 
@@ -24,13 +23,13 @@ if (DEVICE=="BANGLEJS") {
   var OUTFILE = path.join(ROOTDIR, '../Espruino/libs/banglejs/banglejs1_storage_default.c');
   var APPS = [ // IDs of apps to install
     "boot","launch","mclock","setting",
-    "about","alarm","widbat","widbt","welcome"
+    "about","alarm","sched","widbat","widbt","welcome"
   ];
 } else if (DEVICE=="BANGLEJS2") {
   var OUTFILE = path.join(ROOTDIR, '../Espruino/libs/banglejs/banglejs2_storage_default.c');
   var APPS = [ // IDs of apps to install
     "boot","launch","antonclk","setting",
-    "about","alarm","health","widlock","widbat","widbt","widid","welcome"
+    "about","alarm","sched","health","widlock","widbat","widbt","widid","welcome"
   ];
 } else {
   console.log("USAGE:");
@@ -86,7 +85,6 @@ function atob(input) {
   }
 
 var AppInfo = require(ROOTDIR+"/core/js/appinfo.js");
-var appjson = JSON.parse(fs.readFileSync(APPJSON).toString());
 var appfiles = [];
 
 function fileGetter(url) {
@@ -134,8 +132,11 @@ function evaluateFile(file) {
 }
 
 Promise.all(APPS.map(appid => {
-  var app = appjson.find(app=>app.id==appid);
-  if (app===undefined) throw new Error(`App ${appid} not found`);
+  try {
+    var app = JSON.parse(fs.readFileSync(APPDIR + "/" + appid + "/metadata.json").toString());
+  } catch (e) {
+    throw new Error(`App ${appid} not found`);
+  }
   return AppInfo.getFiles(app, {
     fileGetter : fileGetter,
     settings : SETTINGS,

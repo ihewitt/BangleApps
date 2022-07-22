@@ -1,15 +1,17 @@
+const TIMER_IDX = "lcars";
 const SETTINGS_FILE = "lcars.setting.json";
-const Storage = require("Storage");
-
-
-// ...and overwrite them with any saved values
-// This way saved values are preserved if a new version adds more settings
+const locale = require('locale');
 const storage = require('Storage')
 let settings = {
   alarm: -1,
-  dataRow1: "Battery",
-  dataRow2: "Steps",
-  dataRow3: "Temp."
+  dataRow1: "Steps",
+  dataRow2: "HRM",
+  dataRow3: "Battery",
+  speed: "kph",
+  fullscreen: false,
+  themeColor1BG: "#FF9900",
+  themeColor2BG: "#FF00DC",
+  themeColor3BG: "#0094FF",
 };
 let saved_settings = storage.readJSON(SETTINGS_FILE, 1) || settings;
 for (const key in saved_settings) {
@@ -19,37 +21,96 @@ for (const key in saved_settings) {
 /*
  * Colors to use
  */
-let cBlue = "#0094FF";
-let cOrange = "#FF9900";
-let cPurple = "#FF00DC";
+let color1 = settings.themeColor3BG;
+let color2 = settings.themeColor1BG;
+let color3 = settings.themeColor2BG;
 let cWhite = "#FFFFFF";
 let cBlack = "#000000";
+let cGrey = "#424242";
 
 /*
  * Global lcars variables
  */
 let lcarsViewPos = 0;
-let drag;
-let hrmValue = 0;
-var connected = NRF.getSecurityStatus().connected;
-var plotWeek = false;
+// let hrmValue = 0;
+var plotMonth = false;
+
+
+function convert24to16(input)
+{
+  let RGB888 = parseInt(input.replace(/^#/, ''), 16);
+  let r = (RGB888 & 0xFF0000) >> 16;
+  let g = (RGB888 & 0xFF00) >> 8;
+  let b = RGB888 & 0xFF;
+
+  r = (r * 249 + 1014) >> 11;
+  g = (g * 253 + 505) >> 10;
+  b = (b * 249 + 1014) >> 11;
+  let RGB565 = 0;
+  RGB565 = RGB565 | (r << 11);
+  RGB565 = RGB565 | (g << 5);
+  RGB565 = RGB565 | b;
+
+  return "0x"+RGB565.toString(16);
+}
+
+var color1C = convert24to16(color1);
+var color2C = convert24to16(color2);
+var color3C = convert24to16(color3);
 
 /*
- * Requirements and globals
- */
-const locale = require('locale');
+* Requirements and globals
+*/
 
-var bgLeft =  {
+var colorPalette = new Uint16Array([
+  0x0000, // not used
+  color2C,  // second
+  color3C, // third
+  0x0000,  //  not used
+  color1C, // first
+  0x0000, //  not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000, // not used
+  0x0000  // not used
+],0,1);
+
+var bgLeftFullscreen =  {
   width : 27, height : 176, bpp : 3,
   transparent : 0,
-  buffer : require("heatshrink").decompress(atob("AAUM2XLlgCCwAJBBAuy4EAmQIF5cggAIGlmwgYIG2XIF42wF4ImGF4ImHJoQmGJoQdJhZNHNY47CgRNGBIJZHHgRiGBIRQ/KH5QCAFCh/eX5Q/KAwdCAGVbtu27YCCoAJBkuWrNlAQRGCiwRDAQPQBIMJCIYCBsAJBgomEtu0WoQmEy1YBIMBHYttIwQ7FyxQ/KHFlFAQ7F2weCHYplKChRTCCg5TCHw5TMAD0GzVp0wCCBBGaBIMaBAtpwECBA2mwEJBAugDgMmCIwJBF5EABAtoeQQvGCYQdPJoI7LMQzTCLJKAGzAJBO4xQ/KGQA8UP7y/KH5QnAHih/eX5Q/GQ4JCGRJlKCgxTDBAwgCCg5TCHwxTCNA4A=="))
+  buffer : require("heatshrink").decompress((atob("/4AB+VJkmSAQV///+BAtJn//5IIFkmf/4IGyVP/gIGpMnF41PHIImGF4ImHJoQmGJoIdK8hNHNY47C/JNGBIJZGyYJBQA5GCKH5Q/KAQAoUP7y/KH5QGDoQAy0hGF34JB6RGFr4JB9JkFl4JB+gdFy4JB/QdFpYJB/odFkqrCS4xGCWoyDCKH5Q1GShlJChQLCCg5TCHw5TMAD35FAoIIkgJB8hGGv/8Mg8/+QIFp4cB5IRGBIIvI/4IFybyCF4wTCDp5NBHZZiGz4JBLJKAGk4JBO4xQ/KGQA8UP7y/KH5QnAHih/eX5Q/GQ4JCGRJlKCgxTDBAwgCCg5TCHwxTCNA4"))),
+  palette: colorPalette
 };
 
-var bgRight =  {
+var bgLeftNotFullscreen = {
+  width : 27, height : 152, bpp : 3,
+  transparent : 0,
+  buffer : require("heatshrink").decompress((atob("/4AB+VJkmSAQV///+BAtJn//5IIFkmf/4IGyVP/gIGpMnF41PHIImGF4ImHJoQmGJoIdK8hNHNY47C/JNGBIJZGyYJBQA5GCKH5Q/KAQAy0hGF34JB6RGFr4JB9JkFl4JB+gdFy4JB/QdFpYJB/odFkqrCS4xGCWoyhCKH5Q1GShlJChQLCCg5TCHw5TMAD35FAoIIkgJB8hGGv/8Mg8/+QIFp4cB5IRGBIIvI/4IFybyCF4wTCDp5NBHZZiGz4JBLJKAGk4JBO4xQ/KGQA8UP7y/KH5QnAHih/eX5Q/GQ4JCGRJlKCgxTDBAwgCCg5TCHwxTCNA4A=="))),
+  palette: colorPalette
+};
+
+var bgRightFullscreen =  {
   width : 27, height : 176, bpp : 3,
   transparent : 0,
-  buffer : require("heatshrink").decompress(atob("lmy5YCDBIUyBAmy5AJBhYUG2EAhgIFAQMAgQIGCgQABCg4ABEAwUNFI2AKZHAKZEgGRZTGOIUDQxJxGKH5Q/agwAnUP7y/KH4yGeVYAJrdt23bAQVABIMly1ZsoCCMgUWCIYCB6AJBhIRDAQNgBIMFEwlt2i1CEwmWrAJBgI7FtpGCHYuWKH5QxEwpQDlo7F0A7IqBZBEwo7BCIwCBJo53CJoxiCJpIAdgOmzVpAQR/CgAIEAQJ2CBAoCBBIMmCg1oD4QLGFQUCCjQ+CKYw+CKY4JCKYwoCGRMaGREJDoroCgwdFzBlLKH5QvAHih/eX5Q/KE4A8UP7y/KH5QGDpg7HJoxZCCIx3CJowmCF4yACJox/CgAA="))
+  buffer : require("heatshrink").decompress((atob("yVJkgCCyf/AAPJBAYCBk4JB8gUFyVP//yBAoCB//5BAwUCAAIUHAAIgGChopGv5TIn5TIz4yLKYxxC/iGI/xxGKH5Q/agwAnUP7y/KH4yGeVYAJ0hGF34JB6RGFr4JB9JkFl4JB+gdFy4JB/QdFpYJB/odFkp4CS4xGCWoyhCKH5QuDoxQCDpI7GDoJZGHYIRGLIQvGO4QvGMQRNJADv+GIqTC/5PGz4JBJ41JBIPJCg2TD4QLGn4JB/gUaHwRTGHwRTHBIRTGNAQyJ8gyI+QdFp4JB/IdFk5lLKH5QvAHih/eX5Q/KE4A8UP7y/KH5QGDpg7HJoxZCCIx3CJowmCF4yACJoyJC/4A=="))),
+  palette: colorPalette
 };
+
+var bgRightNotFullscreen =  {
+  width : 27, height : 152, bpp : 3,
+  transparent : 0,
+  buffer : require("heatshrink").decompress((atob("yVJkgCCyf/AAPJBAYCBk4JB8gUFyVP//yBAoCB//5BAwUCAAIUHAAIgGChopGv5TIn5TIz4yLKYxxC/iGI/xxGKH5Q/agwAx0hGF34JB6RGFr4JB9JkFl4JB+gdFy4JB/QdFpYJB/odFkqrCS4xGCWoyhCKH5QuDoxQCDpI7GDoJZGHYIRGLIQvGO4QvGMQRNJADv+GIqTC/5PGz4JBJ41JBIPJCg2TD4QLGn4JB/gUaHwRTGHwRTHBIRTGNAQyJ8gyI+QdFp4JB/IdFk5lLKH5QvAHih/eX5Q/KE4A8UP7y/KH5QGDpg7HJoxZCCIx3CJowmCF4yACJoyJC/4A="))),
+  palette: colorPalette
+};
+
+var bgLeft = settings.fullscreen ? bgLeftFullscreen : bgLeftNotFullscreen;
+var bgRight= settings.fullscreen ? bgRightFullscreen : bgRightNotFullscreen;
 
 var iconEarth = {
   width : 50, height : 50, bpp : 3,
@@ -86,8 +147,7 @@ var iconCharging =   {
   buffer : require("heatshrink").decompress(atob("23btugAwUBtoICARG0h048eODQYCJ6P/AAUCCJfbo4SDxYRLtEcuPHjlwgoRJ7RnIloUHoYjDAQfAExEAwUIkACEkSAIEYwCBhZKH6EIJI0CJRFHEY0BJRWBSgf//0AJRYSE4BKLj4SE8BKLv4RD/hK/JS2AXY0gXwRKG4cMmACCJQMAg8csEFJQsBAwfasEAm379u0gFbcBfHzgFBz1xMQZKBjY/D0E2+BOChu26yVEEYdww+cgAFCg+cgIfB6RKF4HbgEIkGChEAthfCJQ0eEAIjBBAMxk6GCJQtgtyVBwRKBAQMbHAJKGXIIFCgACBhl54qVG2E+EAJKBJoWAm0WJQ6SCXgdxFgMLJQvYjeAEAUwFIUitEtJQ14NwUHgEwKYZKGwOwNYX7XgWCg3CJQ5rB4MevPnAoPDJRJrCgEG/ECAoNsJRUwoEesIIBiJKI3CVDti/CJRKVDiJHBSo0YsOGjED8AjBcAcIgdhcAXAPIUAcAYIBcA4dBAQUG8BrBgBuCgOwcBEeXIK2BBAIFBgRqBGoYAChq8CcYUE4FbUYOACQsHzgjDgwFBCIImBAQsDtwYD7cAloRI22B86YBw5QBgoRJ7dAgYEDCJaeBJoMcsARMAQNoJIIRE6A"))
 };
 
-var iconNoBattery = {
-  text: "NO BAT",
+var iconWarning = {
   width : 50, height : 50, bpp : 3,
   transparent : 1,
   buffer : require("heatshrink").decompress(atob("kmSpIC/AWMyoQIFsmECJFJhMmA4QXByVICIwODAQ4RRFIQGD5JVLkIGDzJqMyAGDph8MiRKGyApEAoZKFyYIDQwMkSQNkQZABBhIIOOJRuEL5gRIAUKACVQMhmUSNYNDQYJTBBwYFByGTkOE5FJWYNMknCAQKYCiaSCpmGochDoSYBhMwTAZrChILBhmEzKPBF4ImBTAREBDoMmEwJVDoYjBycJFgWEJQRuLJQ1kmQCCjJlCBYbjCagaDBwyDBmBuBF4TjJAUQKINBChCDQxZBcZIIQF4NIgEAgKSDiQmEVQKMBoARBAAMCSQLLBVoxqKL4gaCChVCNwoRKOIo4CJIgABBoSMHpIRFgDdJOIJUBCAUJRgJuEAQb+DIIgRIAX4C/ASOQA"))
@@ -111,50 +171,109 @@ Graphics.prototype.setFontAntonioLarge = function(scale) {
  */
 var drawTimeout;
 function queueDraw() {
+
+  // Faster updates during alarm to ensure that it is
+  // shown correctly...
+  var timeout = isAlarmEnabled() ? 10000 : 60000;
+
   if (drawTimeout) clearTimeout(drawTimeout);
   drawTimeout = setTimeout(function() {
     drawTimeout = undefined;
     draw();
-  }, 60000 - (Date.now() % 60000));
+  }, timeout - (Date.now() % timeout));
 }
 
-
-function printData(key, y, c){
+/**
+ * This function plots a data row in LCARS style.
+ * Note: It can be called async and therefore, the text alignment and
+ * font is set each time the function is called.
+ */
+function printRow(text, value, y, c){
+  g.setFontAntonioMedium();
   g.setFontAlign(-1,-1,0);
-  var text = "ERR";
-  var value = "NOT FOUND";
 
-  if(key == "Battery"){
-    text = "BAT";
-    value = E.getBattery() + "%";
-
-  } else if(key == "Steps"){
-    text = "STEP";
-    value = getSteps();
-
-  } else if(key == "Temp."){
-    text = "TEMP";
-    value = Math.floor(E.getTemperature()) + "C";
-
-  } else if(key == "HRM"){
-    text = "HRM";
-    value = hrmValue;
-
-  } else if (key == "VREF"){
-    text = "VREF";
-    value = E.getAnalogVRef().toFixed(2) + "V";
-
-  }
-
+  // Print background
   g.setColor(c);
-  g.fillRect(133, y-2, 165 ,y+18);
-  g.fillCircle(161, y+8, 10);
+  g.setFontAlign(-1,-1,0);
+  g.fillRect(80, y-2, 165 ,y+18);
+  g.fillCircle(163, y+8, 10);
   g.setColor(cBlack);
   g.drawString(text, 135, y);
 
+  // Plot text
+  width = g.stringWidth(value);
+  g.setColor(cBlack);
+  g.fillRect(130-width-8, y-2, 130, y+18);
   g.setColor(c);
   g.setFontAlign(1,-1,0);
-  g.drawString(value, 130, y);
+  g.drawString(value, 126, y);
+}
+
+
+function drawData(key, y, c){
+  try{
+    _drawData(key, y, c);
+  } catch(ex){
+    // Show last error - next try hopefully works.
+  }
+}
+
+
+function _drawData(key, y, c){
+  key = key.toUpperCase()
+  var text = key;
+  var value = "ERR";
+  var should_print= true;
+
+  if(key == "STEPS"){
+    text = "STEP";
+    value = getSteps();
+
+  } else if(key == "BATTERY"){
+    text = "BAT";
+    value = E.getBattery() + "%";
+
+  } else if (key == "VREF"){
+    value = E.getAnalogVRef().toFixed(2) + "V";
+
+  } else if(key == "HRM"){
+    value = Math.round(Bangle.getHealthStatus("last").bpm);
+
+  } else if (key == "TEMP"){
+    var weather = getWeather();
+    value = weather.temp;
+
+  } else if (key == "HUMIDITY"){
+    text = "HUM";
+    var weather = getWeather();
+    value = weather.hum;
+
+  } else if (key == "WIND"){
+    text = "WND";
+    var weather = getWeather();
+    value = weather.wind;
+
+  } else if (key == "ALTITUDE"){
+    should_print= false;
+    text = "ALT";
+
+    // Immediately print something - avoid that its empty
+    printRow(text, "", y, c);
+    Bangle.getPressure().then(function(data){
+      if(data && data.altitude){
+        value = Math.round(data.altitude);
+        printRow(text, value, y, c);
+      }
+    })
+
+  } else if(key == "CORET"){
+    value = locale.temp(parseInt(E.getTemperature()));
+  }
+
+  // Print for all datapoints that are not async
+  if(should_print){
+    printRow(text, value, y, c);
+  }
 }
 
 function drawHorizontalBgLine(color, x1, x2, y, h){
@@ -166,22 +285,26 @@ function drawHorizontalBgLine(color, x1, x2, y, h){
 }
 
 
-function drawLock(){
-  if(lcarsViewPos != 0){
+function drawInfo(){
+  if(lcarsViewPos != 0 || !settings.fullscreen){
     return;
   }
 
+  // Draw Infor is called from different sources so
+  // we have to ensure that the alignment is always the same.
+  g.setFontAlign(-1, -1, 0);
   g.setFontAntonioMedium();
-  g.setColor(cOrange);
+  g.setColor(color2);
   g.clearRect(120, 10, g.getWidth(), 75);
   g.drawString("LCARS", 128, 13);
-  if(connected){
+
+  if(NRF.getSecurityStatus().connected){
     g.drawString("CONN", 128, 33);
   } else {
     g.drawString("NOCON", 128, 33);
   }
   if(Bangle.isLocked()){
-    g.setColor(cPurple);
+    g.setColor(color3);
     g.drawString("LOCK", 128, 53);
   }
 }
@@ -191,31 +314,34 @@ function drawState(){
     return;
   }
 
-  g.clearRect(20, 93, 77, 170);
-  g.setColor(cWhite);
-  var bat = E.getBattery();
-  var current = new Date();
-  var hours = current.getHours();
+  g.clearRect(20, 93, 75, 170);
+  g.setFontAlign(0, 0, 0);
+  g.setFontAntonioMedium();
 
   if(!isAlarmEnabled()){
-    var iconImg =
-        Bangle.isCharging() ? iconCharging :
-        bat < 30 ? iconNoBattery :
-        Bangle.isGPSOn() ? iconSatellite :
-        hours % 4 == 0 ? iconSaturn :
-        hours % 4 == 1 ? iconMars :
-        hours % 4 == 2 ? iconMoon :
-        iconEarth;
-    g.drawImage(iconImg, 29, 104);
+    var bat = E.getBattery();
+    var flash = storage.getFree() / process.env.STORAGE;
+    var current = new Date();
+    var hours = current.getHours();
+    var iconMsg =
+        Bangle.isCharging() ? { icon: iconCharging, text: "STATUS" } :
+        bat < 30 ? { icon: iconWarning, text: "BAT" } :
+        flash < 0.1 ? { icon: iconWarning, text: "DISK" } :
+        Bangle.isGPSOn() ? { icon: iconSatellite, text: "STATUS" } :
+        hours % 4 == 0 ? { icon: iconSaturn, text: "STATUS" } :
+        hours % 4 == 1 ? { icon: iconMars, text: "STATUS" } :
+        hours % 4 == 2 ? { icon: iconMoon, text: "STATUS" } :
+        { icon: iconEarth, text: "STATUS" };
+    g.drawImage(iconMsg.icon, 23, 118);
+    g.setColor(cWhite);
+    g.drawString(iconMsg.text, 23+26, 108);
   } else {
     // Alarm within symbol
-    g.setFontAntonioMedium();
-    g.setFontAlign(0, 0, 0);
-    g.setColor(cOrange);
-    g.drawString("ALARM", 29+25, 107);
+    g.setColor(color2);
+    g.drawString("ALARM", 23+26, 108);
     g.setColor(cWhite);
     g.setFontAntonioLarge();
-    g.drawString(getAlarmMinutes(), 29+25, 107+35);
+    g.drawString(getAlarmMinutes(), 23+26, 108+35);
   }
 
   g.setFontAlign(-1, -1, 0);
@@ -224,22 +350,28 @@ function drawState(){
 
 function drawPosition0(){
   // Draw background image
-  g.drawImage(bgLeft, 0, 0);
-  drawHorizontalBgLine(cBlue, 25, 120, 0, 4);
-  drawHorizontalBgLine(cBlue, 130, 176, 0, 4);
-  drawHorizontalBgLine(cPurple, 20, 70, 80, 4);
-  drawHorizontalBgLine(cPurple, 80, 176, 80, 4);
-  drawHorizontalBgLine(cOrange, 35, 110, 87, 4);
-  drawHorizontalBgLine(cOrange, 120, 176, 87, 4);
+  var offset = settings.fullscreen ? 0 : 24;
+  g.drawImage(bgLeft, 0, offset);
+  drawHorizontalBgLine(color1, 25, 120, offset, 4);
+  drawHorizontalBgLine(color1, 130, 176, offset, 4);
+  drawHorizontalBgLine(color3, 20, 70, 80, 4);
+  drawHorizontalBgLine(color3, 80, 176, 80, 4);
+  drawHorizontalBgLine(color2, 35, 110, 87, 4);
+  drawHorizontalBgLine(color2, 120, 176, 87, 4);
 
   // The last line is a battery indicator too
   var bat = E.getBattery() / 100.0;
-  var batX2 = parseInt((172 - 35) * bat + 35);
-  drawHorizontalBgLine(cOrange, 35, batX2, 171, 5);
-  drawHorizontalBgLine(cPurple, batX2+10, 172, 171, 5);
+  var batStart = 19;
+  var batWidth = 172 - batStart;
+  var batX2 = parseInt(batWidth * bat + batStart);
+  drawHorizontalBgLine(color2, batStart, batX2, 171, 5);
+  drawHorizontalBgLine(cGrey, batX2, 172, 171, 5);
+  for(var i=0; i+batStart<=172; i+=parseInt(batWidth/4)){
+    drawHorizontalBgLine(cBlack, batStart+i, batStart+i+3, 168, 8)
+  }
 
-  // Draw logo
-  drawLock();
+  // Draw Infos
+  drawInfo();
 
   // Write time
   g.setFontAlign(-1, -1, 0);
@@ -247,22 +379,33 @@ function drawPosition0(){
   var currentDate = new Date();
   var timeStr = locale.time(currentDate,1);
   g.setFontAntonioLarge();
-  g.drawString(timeStr, 28, 10);
+  if(settings.fullscreen){
+    g.drawString(timeStr, 27, 10);
+  } else {
+    g.drawString(timeStr, 27, 33);
+  }
 
   // Write date
   g.setColor(cWhite);
   g.setFontAntonioMedium();
-  var dayStr = locale.dow(currentDate, true).toUpperCase();
-  dayStr += " " + currentDate.getDate();
-  dayStr += " " + currentDate.getFullYear();
-  g.drawString(dayStr, 29, 56);
+  if(settings.fullscreen){
+    var dayStr = locale.dow(currentDate, true).toUpperCase();
+    dayStr += " " + currentDate.getDate();
+    dayStr += " " + locale.month(currentDate, 1).toUpperCase();
+    g.drawString(dayStr, 30, 56);
+  } else {
+    var dayStr = locale.dow(currentDate, true).toUpperCase();
+    var date = currentDate.getDate();
+    g.drawString(dayStr, 128, 35);
+    g.drawString(date, 128, 55);
+  }
 
   // Draw data
   g.setFontAlign(-1, -1, 0);
   g.setColor(cWhite);
-  printData(settings.dataRow1, 97, cOrange);
-  printData(settings.dataRow2, 122, cPurple);
-  printData(settings.dataRow3, 147, cBlue);
+  drawData(settings.dataRow1, 97, color2);
+  drawData(settings.dataRow2, 122, color3);
+  drawData(settings.dataRow3, 147, color1);
 
   // Draw state
   drawState();
@@ -270,13 +413,16 @@ function drawPosition0(){
 
 function drawPosition1(){
   // Draw background image
-  g.drawImage(bgRight, 149, 0);
-  drawHorizontalBgLine(cBlue, 0, 140, 0, 4);
-  drawHorizontalBgLine(cPurple, 0, 80, 80, 4);
-  drawHorizontalBgLine(cPurple, 90, 150, 80, 4);
-  drawHorizontalBgLine(cOrange, 0, 50, 87, 4);
-  drawHorizontalBgLine(cOrange, 60, 140, 87, 4);
-  drawHorizontalBgLine(cOrange, 0, 150, 171, 5);
+  var offset = settings.fullscreen ? 0 : 24;
+  g.drawImage(bgRight, 149, offset);
+  if(settings.fullscreen){
+    drawHorizontalBgLine(color1, 0, 140, offset, 4);
+  }
+  drawHorizontalBgLine(color3, 0, 80, 80, 4);
+  drawHorizontalBgLine(color3, 90, 150, 80, 4);
+  drawHorizontalBgLine(color2, 0, 50, 87, 4);
+  drawHorizontalBgLine(color2, 60, 140, 87, 4);
+  drawHorizontalBgLine(color2, 0, 150, 171, 5);
 
   // Draw steps bars
   g.setColor(cWhite);
@@ -294,7 +440,7 @@ function drawPosition1(){
   }
 
   // Plot HRM graph
-  if(plotWeek){
+  if(plotMonth){
     var data = new Uint16Array(32);
     var cnt = new Uint8Array(32);
     health.readDailySummaries(new Date(), h=>{
@@ -331,8 +477,13 @@ function drawPosition1(){
     g.setFontAlign(1, 1, 0);
     g.setFontAntonioMedium();
     g.setColor(cWhite);
-    g.drawString("WEEK HRM", 154, 27);
-    g.drawString("WEEK STEPS [K]", 154, 115);
+
+    if(settings.fullscreen){
+      g.drawString("M-HRM", 154, 27);
+      g.drawString("M-STEPS [K]", 154, 115);
+    } else {
+      g.drawString("MONTH", 154, 115);
+    }
 
   // Plot day
   } else {
@@ -372,28 +523,37 @@ function drawPosition1(){
     g.setFontAlign(1, 1, 0);
     g.setFontAntonioMedium();
     g.setColor(cWhite);
-    g.drawString("DAY HRM", 154, 27);
-    g.drawString("DAY STEPS", 154, 115);
+
+    if(settings.fullscreen){
+      g.drawString("D-HRM", 154, 27);
+      g.drawString("D-STEPS", 154, 115);
+    } else {
+      g.drawString("DAY", 154, 115);
+    }
   }
 }
 
 function draw(){
-  // First handle alarm to show this correctly afterwards
-  handleAlarm();
+    // Queue draw first to ensure that its called in one minute again.
+    queueDraw();
 
-  // Next draw the watch face
-  g.reset();
-  g.clearRect(0, 0, g.getWidth(), g.getHeight());
+    // Next draw the watch face
+    g.reset();
+    g.clearRect(0, 0, g.getWidth(), g.getHeight());
 
-  // Draw current lcars position
-  if(lcarsViewPos == 0){
-    drawPosition0();
-  } else if (lcarsViewPos == 1) {
-    drawPosition1();
-  }
+    // Draw current lcars position
+    if(lcarsViewPos == 0){
+      drawPosition0();
+    } else if (lcarsViewPos == 1) {
+      drawPosition1();
+    }
 
-  // Queue draw in one minute
-  queueDraw();
+    // After drawing the watch face, we can draw the widgets
+    if(settings.fullscreen){
+      for (let wd of WIDGETS) {wd.draw=()=>{};wd.area="";}
+    } else {
+      Bangle.drawWidgets();
+    }
 }
 
 
@@ -401,58 +561,111 @@ function draw(){
  * Step counter via widget
  */
 function getSteps() {
-  var steps = 0
-  try {
-    health = require("health");
+  var steps = 0;
+  try{
+      if (WIDGETS.wpedom !== undefined) {
+          steps = WIDGETS.wpedom.getSteps();
+      } else if (WIDGETS.activepedom !== undefined) {
+          steps = WIDGETS.activepedom.getSteps();
+      } else {
+        steps = Bangle.getHealthStatus("day").steps;
+      }
   } catch(ex) {
-    return steps;
+      // In case we failed, we can only show 0 steps.
   }
 
-  health.readDay(new Date(), h=>steps+=h.steps);
   return steps;
 }
 
 
+function getWeather(){
+  var weatherJson;
+
+  try {
+    weatherJson = storage.readJSON('weather.json');
+    var weather = weatherJson.weather;
+
+    // Temperature
+    weather.temp = locale.temp(weather.temp-273.15);
+
+    // Humidity
+    weather.hum = weather.hum + "%";
+
+    // Wind
+    const wind = locale.speed(weather.wind).match(/^(\D*\d*)(.*)$/);
+    var speedFactor = settings.speed == "kph" ? 1.0 : 1.0 / 1.60934;
+    weather.wind = Math.round(wind[1] * speedFactor);
+
+    return weather
+
+  } catch(ex) {
+    // Return default
+  }
+
+  return {
+    temp: " ? ",
+    hum: " ? ",
+    txt: " ? ",
+    wind: " ? ",
+    wdir: " ? ",
+    wrose: " ? "
+  };
+}
+
 /*
  * Handle alarm
  */
-function getCurrentTimeInMinutes(){
-  return Math.floor(Date.now() / (1000*60));
-}
-
 function isAlarmEnabled(){
- return settings.alarm >= 0;
+  try{
+    var alarm = require('sched');
+    var alarmObj = alarm.getAlarm(TIMER_IDX);
+    if(alarmObj===undefined || !alarmObj.on){
+      return false;
+    }
+
+    return true;
+
+  } catch(ex){ }
+  return false;
 }
 
 function getAlarmMinutes(){
-  var currentTime = getCurrentTimeInMinutes();
-  return settings.alarm - currentTime;
+  if(!isAlarmEnabled()){
+      return -1;
+  }
+
+  var alarm = require('sched');
+  var alarmObj =  alarm.getAlarm(TIMER_IDX);
+  return Math.round(alarm.getTimeToAlarm(alarmObj)/(60*1000));
 }
 
-function handleAlarm(){
-  if(!isAlarmEnabled()){
-    return;
-  }
+function increaseAlarm(){
+  try{
+      var minutes = isAlarmEnabled() ? getAlarmMinutes() : 0;
+      var alarm = require('sched')
+      alarm.setAlarm(TIMER_IDX, {
+        timer : (minutes+5)*60*1000,
+      });
+      alarm.reload();
+  } catch(ex){ }
+}
 
-  if(getAlarmMinutes() > 0){
-    return;
-  }
+function decreaseAlarm(){
+  try{
+      var minutes = getAlarmMinutes();
+      minutes -= 5;
 
-  // Alarm
-  var t = 300;
-  Bangle.buzz(t, 1)
-  .then(() => new Promise(resolve => setTimeout(resolve, t)))
-  .then(() => Bangle.buzz(t, 1))
-  .then(() => new Promise(resolve => setTimeout(resolve, t)))
-  .then(() => Bangle.buzz(t, 1))
-  .then(() => new Promise(resolve => setTimeout(resolve, t)))
-  .then(() => Bangle.buzz(t, 1))
-  .then(() => new Promise(resolve => setTimeout(resolve, 5E3)))
-  .then(() => {
-    // Update alarm state to disabled
-    settings.alarm = -1;
-    Storage.writeJSON(SETTINGS_FILE, settings);
-  });
+      var alarm = require('sched')
+      alarm.setAlarm(TIMER_IDX, undefined);
+
+      if(minutes > 0){
+        alarm.setAlarm(TIMER_IDX, {
+            timer : minutes*60*1000,
+        });
+      }
+
+      alarm.reload();
+  } catch(ex){ }
 }
 
 
@@ -462,94 +675,69 @@ function handleAlarm(){
 Bangle.on('lcdPower',on=>{
   if (on) {
     // Whenever we connect to Gadgetbridge, reading data from
-    // health failed. Therefore, we update and read data from
-    // health iff the connection state did not change.
-    if(connected == NRF.getSecurityStatus().connected) {
-      draw();
-    } else {
-      connected = NRF.getSecurityStatus().connected
-      drawLock();
-    }
+    // health failed. Therefore, we update only partially...
+    drawInfo();
+    drawState();
   } else { // stop draw timer
     if (drawTimeout) clearTimeout(drawTimeout);
     drawTimeout = undefined;
   }
-
-  connected = NRF.getSecurityStatus().connected
 });
 
 Bangle.on('lock', function(isLocked) {
-  drawLock();
+  drawInfo();
 });
 
 Bangle.on('charging',function(charging) {
   drawState();
 });
 
-Bangle.on('HRM', function (hrm) {
-  hrmValue = hrm.bpm;
-});
-
-
-function increaseAlarm(){
-  if(isAlarmEnabled()){
-    settings.alarm += 5;
-  } else {
-    settings.alarm = getCurrentTimeInMinutes() + 5;
-  }
-
-  Storage.writeJSON(SETTINGS_FILE, settings);
+function feedback(){
+  Bangle.buzz(40, 0.3);
 }
 
+// Touch gestures to control clock. We don't use swipe to be compatible with the bangle ecosystem
+Bangle.on('touch', function(btn, e){
+  var left = parseInt(g.getWidth() * 0.2);
+  var right = g.getWidth() - left;
+  var upper = parseInt(g.getHeight() * 0.2);
+  var lower = g.getHeight() - upper;
 
-function decreaseAlarm(){
-  if(isAlarmEnabled() && (settings.alarm-5 > getCurrentTimeInMinutes())){
-    settings.alarm -= 5;
-  } else {
-    settings.alarm = -1;
-  }
+  var is_left = e.x < left;
+  var is_right = e.x > right;
+  var is_upper = e.y < upper;
+  var is_lower = e.y > lower;
 
-  Storage.writeJSON(SETTINGS_FILE, settings);
-}
-
-
-// Thanks to the app "gbmusic" for this code to detect swipes in all 4 directions.
-Bangle.on("drag", e => {
-  if (!drag) { // start dragging
-    drag = {x: e.x, y: e.y};
-  } else if (!e.b) { // released
-    const dx = e.x-drag.x, dy = e.y-drag.y;
-    drag = null;
-
-    // Horizontal swipe
-    if (Math.abs(dx)>Math.abs(dy)+10) {
-      if(dx > 0){
-        lcarsViewPos = 0;
-      } else {
-        lcarsViewPos = 1;
-      }
-
-    // Vertical swipe
-    } else if (Math.abs(dy)>Math.abs(dx)+10) {
-      if(lcarsViewPos == 0){
-        if(dy > 0){
-          decreaseAlarm();
-        } else {
-          increaseAlarm();
-        }
-
-        // Only update the state and return to
-        // avoid a full draw as this is much faster.
-        drawState();
-        return;
-      }
-
-      if(lcarsViewPos == 1){
-        plotWeek = dy < 0 ? true : false;
-      }
-    }
-
+  if(is_left && lcarsViewPos == 1){
+    feedback();
+    lcarsViewPos = 0;
     draw();
+    return;
+
+  } else if(is_right  && lcarsViewPos == 0){
+    feedback();
+    lcarsViewPos = 1;
+    draw();
+    return;
+  }
+
+  if(lcarsViewPos == 0){
+    if(is_upper){
+      feedback();
+      increaseAlarm();
+      drawState();
+      return;
+    } if(is_lower){
+      feedback();
+      decreaseAlarm();
+      drawState();
+      return;
+    }
+  } else if (lcarsViewPos == 1 && (is_upper || is_lower) && plotMonth != is_lower){
+    feedback();
+    plotMonth = is_lower;
+    draw();
+    return;
   }
 });
 
@@ -560,16 +748,7 @@ Bangle.on("drag", e => {
 // Show launcher when middle button pressed
 Bangle.setUI("clock");
 Bangle.loadWidgets();
-/*
- * we are not drawing the widgets as we are taking over the whole screen
- * so we will blank out the draw() functions of each widget and change the
- * area to the top bar doesn't get cleared.
- */
-for (let wd of WIDGETS) {wd.draw=()=>{};wd.area="";}
 
 // Clear the screen once, at startup and draw clock
 g.setTheme({bg:"#000",fg:"#fff",dark:true}).clear();
 draw();
-
-// After drawing the watch face, we can draw the widgets
-// Bangle.drawWidgets();

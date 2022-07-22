@@ -1,6 +1,5 @@
 .htaccess
 node_modules
-package-lock.json
 .DS_Store
 *.js.bak
 appdates.csv
@@ -9,3 +8,6 @@ appdates.csv
 _config.yml
 tests/Layout/bin/tmp.*
 tests/Layout/testresult.bmp
+apps.local.json
+_site
+.jekyll-cache
