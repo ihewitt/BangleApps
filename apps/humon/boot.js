@@ -31,7 +31,6 @@ class HumonSensor {
                   {smo2 : this.smo2, zone : this.zone, unit : this.unit});
     }
   }
-
 }
 
 var mySensor = new HumonSensor();
