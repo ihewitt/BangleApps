@@ -1,0 +1,21 @@
+{
+  "id": "mozy",
+  "name": "Humon",
+  "version": "0.01",
+  "description": "Display muscle oxygen sensor data",
+  "icon": "humon.png",
+  "type": "app",
+  "tags": "health",
+  "readme": "README.md",
+  "supports": ["BANGLEJS","BANGLEJS2"],
+  "storage": [
+    {"name":"humon.wid.js","url":"widget.js"},
+    {"name":"humon.app.js","url":"humon.js"},
+    {"name":"humon.recorder.js","url":"recorder.js"},
+    {"name":"humon.settings.js","url":"settings.js"},
+    {"name":"humon.img","url":"humon-icon.js","evaluate":true},
+    {"name":"humon.boot.js","url":"boot.js"}
+  ],
+  "data": [{"name":"humon.json","url":"app-settings.json"}],
+  "screenshots": [{"url":"screenshot.png"}]
+}
