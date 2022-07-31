@@ -2,6 +2,7 @@
 // If enabled in settings run constantly in background
 //
 (function() {
+
 //var log = function() {};//print
 var log=print;
 var settings = {};
@@ -35,37 +36,36 @@ class HumonSensor {
 
 var mySensor = new HumonSensor();
 
-/*    NRF.requestDevice({active:true,timeout : 20000, filters : [ {namePrefix : 'CORE'} ]})
+function connection_setup() {
+    log("Scanning for Humon sensor...");
+    
+/*     //TODO change to seach for service/id/name/etc
+    NRF.connect("df:65:3c:a2:f6:a5 random").then(function(g) {
+        gatt = g;*/
+      
+    NRF.requestDevice({active:false,timeout : 20000, filters : [ {namePrefix : 'Hex 3CA2'} ]})
       .then(function(d) {
         device = d;
         log("Found device");
         return device.gatt.connect();
       })
       .then(function(g) {
-        gatt = g;*/
-
-function connection_setup() {
-    log("Scanning for Humon sensor...");
-    NRF.connect("df:65:3c:a2:f6:a5 random") //TODO change to seach for service/id/name/etc
-      .then(function(g) {
-      gatt = g;
-
+        gatt = g;     
+        log("got gatt");
         return gatt.getPrimaryService('0000f00d-1212-efde-1523-785fef13d123');
-      })
-      .then(function(s) {
+      }).then(function(s) {
         service = s;
+        log("got service");
         return service.getCharacteristic('0000deef-1212-efde-1523-785fef13d123');
-      })
-      .then(function(c) {
+      }).then(function(c) {
         characteristic = c;
+        log("got characteristic");
         characteristic.on('characteristicvaluechanged',
                           (event) => mySensor.updateSensor(event));
         return characteristic.startNotifications();
-      })
-      .then(function() {
+      }).then(function() {
         log("Done!");
-      })
-      .catch(function(e) {
+      }).catch(function(e) {
         log(e.toString(), "ERROR");
         log(e);
       });
@@ -86,5 +86,6 @@ if (settings.enabled) {
 }
 
 E.on('kill', () => { connection_end(); });
+
 
 })();
